@@ -1,0 +1,47 @@
+{
+  "name": "json-array-editor",
+  "displayName": "JsonArrayEditor",
+  "description": "Edit JSON arrays in a spreadsheet-like form.",
+  "version": "0.0.1",
+  "publisher": "local-dev",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:jsonArrayEditor.editAtCursor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jsonArrayEditor.editAtCursor",
+        "title": "Edit with JsonArrayEditor"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "jsonArrayEditor.editAtCursor",
+          "when": "editorLangId == json || editorLangId == jsonc",
+          "group": "navigation@100"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.1",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.2.1"
+  }
+}
