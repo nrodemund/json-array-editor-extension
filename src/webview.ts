@@ -69,6 +69,21 @@ export function getWebviewHtml() {
       position: sticky;
       top: 0;
       z-index: 1;
+      position: relative;
+    }
+    .resizeHandle {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      z-index: 2;
+    }
+    .resizeHandle:hover {
+      background: var(--vscode-focusBorder);
+      opacity: 0.35;
     }
     .cellWrap {
       display: flex;
@@ -178,6 +193,9 @@ export function getWebviewHtml() {
     let searchTerm = '';
     let activePopup = null;
 
+    const state = vscode.getState() || {};
+    let columnWidths = state.columnWidths || {};
+
     const meta = document.getElementById('meta');
     const kindLabel = document.getElementById('kindLabel');
     const tableHost = document.getElementById('tableHost');
@@ -213,22 +231,23 @@ export function getWebviewHtml() {
       searchTerm = (searchInput.value || '').toLowerCase();
       render(currentFileName, currentPathLabel);
     });
-window.addEventListener('message', (event) => {
-  const msg = event.data;
-  if (msg.type === 'load') {
-    model = msg.model;
-    currentFileName = msg.fileName;
-    currentPathLabel = msg.pathLabel;
-    render(msg.fileName, msg.pathLabel);
-    return;
-  }
 
-  if (msg.type === 'removeColumnResult') {
-    if (msg.confirmed) {
-      removeColumn(msg.colIndex, false);
-    }
-  }
-});
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg.type === 'load') {
+        model = msg.model;
+        currentFileName = msg.fileName;
+        currentPathLabel = msg.pathLabel;
+        render(msg.fileName, msg.pathLabel);
+        return;
+      }
+
+      if (msg.type === 'removeColumnResult') {
+        if (msg.confirmed) {
+          removeColumn(msg.colIndex, false);
+        }
+      }
+    });
 
     function render(fileName, pathLabel) {
       if (!model) {
@@ -259,6 +278,13 @@ window.addEventListener('message', (event) => {
 
       model.columns.forEach((column, colIndex) => {
         const th = document.createElement('th');
+
+        const widthKey = getColumnWidthKey(colIndex, column.key);
+        const savedWidth = columnWidths[widthKey];
+        if (typeof savedWidth === 'number' && savedWidth > 40) {
+          th.style.width = savedWidth + 'px';
+        }
+
         const wrap = document.createElement('div');
         wrap.className = 'columnHeader';
 
@@ -283,22 +309,32 @@ window.addEventListener('message', (event) => {
         });
 
         const typeSelect = document.createElement('select');
-        ['text', 'number', 'bool', 'color'].forEach((t) => {
+        ['text', 'number', 'bool', 'color', 'array', 'object'].forEach((t) => {
           const opt = document.createElement('option');
           opt.value = t;
           opt.textContent = t;
           if (column.type === t) opt.selected = true;
           typeSelect.appendChild(opt);
         });
-    typeSelect.addEventListener('input', () => {
-  changeColumnType(colIndex, typeSelect.value);
-});
+        typeSelect.addEventListener('input', () => {
+          changeColumnType(colIndex, typeSelect.value);
+        });
 
         nameRow.appendChild(nameInput);
         nameRow.appendChild(removeBtn);
         wrap.appendChild(nameRow);
         wrap.appendChild(typeSelect);
         th.appendChild(wrap);
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'resizeHandle';
+        resizeHandle.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          startColumnResize(event, th, colIndex, column.key);
+        });
+        th.appendChild(resizeHandle);
+
         hRow.appendChild(th);
       });
 
@@ -469,10 +505,85 @@ window.addEventListener('message', (event) => {
       activePopup = menu;
     }
 
+    function getColumnWidthKey(colIndex, columnKey) {
+      return currentPathLabel + '::' + colIndex + '::' + columnKey;
+    }
+
+    function startColumnResize(event, th, colIndex, columnKey) {
+      const startX = event.clientX;
+      const startWidth = th.getBoundingClientRect().width;
+      const widthKey = getColumnWidthKey(colIndex, columnKey);
+
+      function onMouseMove(moveEvent) {
+        const delta = moveEvent.clientX - startX;
+        const nextWidth = Math.max(80, Math.round(startWidth + delta));
+        th.style.width = nextWidth + 'px';
+        columnWidths[widthKey] = nextWidth;
+        vscode.setState({ columnWidths });
+      }
+
+      function onMouseUp() {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      }
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    }
+
+    function getChildPath(rowIndex, columnKey) {
+      if (model.kind === 'single-object') {
+        return [...model.path, columnKey];
+      }
+      return [...model.path, rowIndex, columnKey];
+    }
+
+    function createStructuredValue(row, rowIndex, column) {
+      const path = getChildPath(rowIndex, column.key);
+
+      if (column.type === 'array') {
+        row[column.key] = [];
+        render(currentFileName, currentPathLabel);
+        vscode.postMessage({ type: 'openChild', path });
+        return;
+      }
+
+      if (column.type === 'object') {
+        row[column.key] = {};
+        render(currentFileName, currentPathLabel);
+        vscode.postMessage({ type: 'openChild', path });
+      }
+    }
+
     function renderCell(row, rowIndex, column) {
       const wrap = document.createElement('div');
       wrap.className = 'cellWrap';
       const value = row[column.key];
+
+      if (column.type === 'array' && (value === null || value === undefined || !Array.isArray(value))) {
+        const createBtn = document.createElement('button');
+        createBtn.type = 'button';
+        createBtn.textContent = 'Create';
+        createBtn.addEventListener('click', () => {
+          createStructuredValue(row, rowIndex, column);
+        });
+        wrap.appendChild(createBtn);
+        return wrap;
+      }
+
+      if (
+        column.type === 'object' &&
+        (value === null || value === undefined || Array.isArray(value) || typeof value !== 'object')
+      ) {
+        const createBtn = document.createElement('button');
+        createBtn.type = 'button';
+        createBtn.textContent = 'Create';
+        createBtn.addEventListener('click', () => {
+          createStructuredValue(row, rowIndex, column);
+        });
+        wrap.appendChild(createBtn);
+        return wrap;
+      }
 
       if (Array.isArray(value)) {
         const txt = document.createElement('input');
@@ -485,12 +596,7 @@ window.addEventListener('message', (event) => {
         const openBtn = document.createElement('button');
         openBtn.textContent = 'Open child';
 
-        let childPath;
-        if (model.kind === 'single-object') {
-          childPath = [...model.path, column.key];
-        } else {
-          childPath = [...model.path, rowIndex, column.key];
-        }
+        const childPath = getChildPath(rowIndex, column.key);
 
         openBtn.addEventListener('click', () => {
           vscode.postMessage({ type: 'openChild', path: childPath });
@@ -513,12 +619,7 @@ window.addEventListener('message', (event) => {
           const openBtn = document.createElement('button');
           openBtn.textContent = 'Open child';
           openBtn.addEventListener('click', () => {
-            let basePath;
-            if (model.kind === 'single-object') {
-              basePath = [...model.path, column.key];
-            } else {
-              basePath = [...model.path, rowIndex, column.key];
-            }
+            const basePath = getChildPath(rowIndex, column.key);
             vscode.postMessage({ type: 'chooseChild', basePath });
           });
           wrap.appendChild(txt);
@@ -546,7 +647,8 @@ window.addEventListener('message', (event) => {
         toggleBtn.type = 'button';
         toggleBtn.textContent = value === true ? 'true' : value === false ? 'false' : '(empty)';
         toggleBtn.addEventListener('click', () => {
-          row[column.key] = value === true ? false : true;
+          const current = row[column.key];
+          row[column.key] = current === true ? false : true;
           render(currentFileName, currentPathLabel);
         });
         wrap.appendChild(toggleBtn);
@@ -657,78 +759,7 @@ window.addEventListener('message', (event) => {
         columnKey: column.key,
       });
     }
-function changeColumnType(colIndex, nextType) {
-  if (!model) {
-    return;
-  }
 
-  const column = model.columns[colIndex];
-  if (!column) {
-    return;
-  }
-
-  column.type = nextType;
-
-  for (const row of model.rows) {
-    row[column.key] = convertValueForType(row[column.key], nextType);
-  }
-
-  render(currentFileName, currentPathLabel);
-}
-
-function convertValueForType(value, type) {
-  if (Array.isArray(value) || (value && typeof value === 'object')) {
-    return value;
-  }
-
-  if (value === null || value === undefined) {
-    switch (type) {
-      case 'number':
-        return 0;
-      case 'bool':
-        return false;
-      case 'color':
-        return '#000000';
-      default:
-        return '';
-    }
-  }
-
-  switch (type) {
-    case 'number': {
-      if (typeof value === 'number') {
-        return value;
-      }
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-
-    case 'bool': {
-      if (typeof value === 'boolean') {
-        return value;
-      }
-      if (typeof value === 'string') {
-        const lower = value.trim().toLowerCase();
-        if (lower === 'true') return true;
-        if (lower === 'false') return false;
-        if (lower === '1') return true;
-        if (lower === '0') return false;
-      }
-      return Boolean(value);
-    }
-
-    case 'color': {
-      if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
-        return value;
-      }
-      return '#000000';
-    }
-
-    case 'text':
-    default:
-      return typeof value === 'string' ? value : String(value);
-  }
-}
     function removeColumn(colIndex, askConfirmation = true) {
       if (!model || model.kind === 'primitive-array') {
         return;
@@ -783,6 +814,87 @@ function convertValueForType(value, type) {
       render(currentFileName, currentPathLabel);
     }
 
+    function changeColumnType(colIndex, nextType) {
+      if (!model) {
+        return;
+      }
+
+      const column = model.columns[colIndex];
+      if (!column) {
+        return;
+      }
+
+      column.type = nextType;
+
+      for (const row of model.rows) {
+        row[column.key] = convertValueForType(row[column.key], nextType);
+      }
+
+      render(currentFileName, currentPathLabel);
+    }
+
+    function convertValueForType(value, type) {
+      if (type === 'array') {
+        return Array.isArray(value) ? value : null;
+      }
+
+      if (type === 'object') {
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+      }
+
+      if (Array.isArray(value) || (value && typeof value === 'object')) {
+        return value;
+      }
+
+      if (value === null || value === undefined) {
+        switch (type) {
+          case 'number':
+            return 0;
+          case 'bool':
+            return false;
+          case 'color':
+            return '#000000';
+          default:
+            return '';
+        }
+      }
+
+      switch (type) {
+        case 'number': {
+          if (typeof value === 'number') {
+            return value;
+          }
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        case 'bool': {
+          if (typeof value === 'boolean') {
+            return value;
+          }
+          if (typeof value === 'string') {
+            const lower = value.trim().toLowerCase();
+            if (lower === 'true') return true;
+            if (lower === 'false') return false;
+            if (lower === '1') return true;
+            if (lower === '0') return false;
+          }
+          return Boolean(value);
+        }
+
+        case 'color': {
+          if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
+            return value;
+          }
+          return '#000000';
+        }
+
+        case 'text':
+        default:
+          return typeof value === 'string' ? value : String(value);
+      }
+    }
+
     function hasAnyChildArrays(value) {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return false;
@@ -798,6 +910,9 @@ function convertValueForType(value, type) {
           return false;
         case 'color':
           return '#000000';
+        case 'array':
+        case 'object':
+          return null;
         default:
           return '';
       }

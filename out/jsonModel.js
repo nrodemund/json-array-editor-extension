@@ -190,6 +190,12 @@ function detectColumnType(values) {
     if (nonNull.length === 0) {
         return 'text';
     }
+    if (nonNull.every((value) => Array.isArray(value))) {
+        return 'array';
+    }
+    if (nonNull.every((value) => value && typeof value === 'object' && !Array.isArray(value))) {
+        return 'object';
+    }
     if (nonNull.every((value) => typeof value === 'number')) {
         return 'number';
     }

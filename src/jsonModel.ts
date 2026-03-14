@@ -1,6 +1,6 @@
 import { findNodeAtOffset, getNodeValue, type Node as JsonNode } from 'jsonc-parser';
 
-export type ColumnType = 'text' | 'number' | 'bool' | 'color';
+export type ColumnType = 'text' | 'number' | 'bool' | 'color' | 'array' | 'object';
 
 export type ColumnDef = {
   key: string;
@@ -234,6 +234,12 @@ export function detectColumnType(values: Array<unknown>): ColumnType {
   const nonNull = values.filter((value) => value !== null && value !== undefined);
   if (nonNull.length === 0) {
     return 'text';
+  }
+  if (nonNull.every((value) => Array.isArray(value))) {
+    return 'array';
+  }
+  if (nonNull.every((value) => value && typeof value === 'object' && !Array.isArray(value))) {
+    return 'object';
   }
   if (nonNull.every((value) => typeof value === 'number')) {
     return 'number';
