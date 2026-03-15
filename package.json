@@ -3,7 +3,11 @@
   "displayName": "JsonArrayEditor",
   "description": "Edit JSON arrays in a spreadsheet-like form.",
   "version": "0.0.1",
-  "publisher": "local-dev",
+  "publisher": "Rodemund Niklas",
+  "repository": {
+  "type": "git",
+  "url": "https://github.com/nrodemund/json-array-editor-extension"
+},
   "engines": {
     "vscode": "^1.85.0"
   },

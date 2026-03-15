@@ -1,22 +1,27 @@
 {
     "a": {
         "val": 1,
-        "newColumn": "#a31f1f"
+        "newColumn": "#a31f1f",
+        "newColumn1": true
     },
     "b": {
         "val": 2,
-        "newColumn": "#062651"
+        "newColumn": "#062651",
+        "newColumn1": true
     },
     "c": {
         "val": 3,
-        "newColumn": "#2f9d20"
+        "newColumn": "#2f9d20",
+        "newColumn1": true
     },
     "dsuper": {
         "val": 4,
-        "newColumn": "#341414"
+        "newColumn": "#341414",
+        "newColumn1": true
     },
     "yay": {
         "val": 4,
-        "newColumn": "#341414"
+        "newColumn": "#341414",
+        "newColumn1": true
     }
 }

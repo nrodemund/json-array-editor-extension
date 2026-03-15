@@ -1,6 +1,10 @@
 # JsonArrayEditor
 
-A VS Code extension that opens a spreadsheet-like editor for JSON arrays.
+A VS Code extension that opens a spreadsheet-like editor for JSON arrays by right-clicking an json array.
+
+![Screenshot](images/screenshot1.png)
+
+
 
 ## Features
 
@@ -14,11 +18,5 @@ A VS Code extension that opens a spreadsheet-like editor for JSON arrays.
 - Per-column type selection: `text`, `number`, `bool`, `color`.
 - Nested arrays are shown as text with an **Open child** action.
 
-## Run locally
-
-```bash
-npm install
-npm run compile
-```
 
 Then press `F5` in VS Code to launch an Extension Development Host.
