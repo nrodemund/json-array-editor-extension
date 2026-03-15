@@ -2,3 +2,5 @@ node_modules
 update.bat
 *.vsix
 test.json
+test2.json
+test3.json

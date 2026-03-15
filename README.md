@@ -1,22 +1,21 @@
 # JsonArrayEditor
 
-A VS Code extension that opens a spreadsheet-like editor for JSON arrays by right-clicking an json array.
+JsonArrayEditor is a lightweight VS Code extension that opens a spreadsheet-style editor for JSON arrays directly from the editor context menu.
 
 ![Screenshot](images/screenshot1.png)
 
-
-
 ## Features
 
-- Adds **Edit with JsonArrayEditor** to the editor context menu for JSON and JSONC files.
-- Opens the array at the current cursor position.
+- Adds **Edit with JsonArrayEditor** to the context menu for JSON and JSONC files
+- Opens the array at the current cursor position
 - Supports:
-  - arrays of objects (`[{...}, {...}]`)
-  - native arrays of primitive values (`[1, 2, 3]`, `["a", "b"]`, `[true, false]`)
-- Shows unioned object keys as spreadsheet columns.
-- Add row, clone row, add column, rename column.
-- Per-column type selection: `text`, `number`, `bool`, `color`.
-- Nested arrays are shown as text with an **Open child** action.
+  - arrays of objects, such as `[{...}, {...}]`
+  - arrays of primitive values, such as `[1, 2, 3]`, `["a", "b"]`, and `[true, false]`
+- Uses the union of object keys as spreadsheet columns
+- Lets you add rows, clone rows, add columns, and rename columns
+- Supports per-column types: `text`, `number`, `bool`, and `color`
+- Displays nested arrays as text and provides an **Open child** action
 
+## Usage
 
-Then press `F5` in VS Code to launch an Extension Development Host.
+Open a JSON or JSONC file, place the cursor inside an array, and right-click to choose **Edit with JsonArrayEditor**.
