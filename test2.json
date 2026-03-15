@@ -1,0 +1,18 @@
+{
+    "a": {
+        "val": 1,
+        "newColumn": "#a31f1f"
+    },
+    "b": {
+        "val": 2,
+        "newColumn": "#062651"
+    },
+    "c": {
+        "val": 3,
+        "newColumn": "#2f9d20"
+    },
+    "dsuper": {
+        "val": 4,
+        "newColumn": "#341414"
+    }
+}

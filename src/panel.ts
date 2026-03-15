@@ -56,7 +56,6 @@ export class JsonArrayEditorPanel {
   private readonly disposables: Array<vscode.Disposable> = [];
   private activeDocument?: vscode.TextDocument;
   private activePath: Array<string | number> = [];
-  private rootPath: Array<string | number> = [];
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this.panel = panel;
@@ -141,33 +140,23 @@ export class JsonArrayEditorPanel {
       const path = getNodePath(targetNode);
       model = buildModelFromArrayNode(targetNode, path);
       this.activePath = path;
-      if (!nestedPath) {
-        this.rootPath = [...path];
-      }
     } else if (targetNode.type === 'object') {
       const path = getNodePath(targetNode);
       model = buildModelFromObjectNode(targetNode, path);
       this.activePath = path;
-      if (!nestedPath) {
-        this.rootPath = [...path];
-      }
     } else {
       throw new Error('Cursor is not within a supported JSON array or standalone object.');
     }
 
-    if (!this.rootPath.length) {
-      this.rootPath = [...this.activePath];
-    }
-
-    model.rootPath = [...this.rootPath];
+    model.rootPath = [...this.activePath];
 
     this.panel.title = `JsonArrayEditor - ${document.fileName.split(/[\\/]/).pop() ?? 'JSON'}`;
-this.panel.webview.postMessage({
-  type: 'load',
-  model,
-  fileName: document.fileName,
-  pathLabel: pathToLabel(this.activePath),
-});
+    this.panel.webview.postMessage({
+      type: 'load',
+      model,
+      fileName: document.fileName,
+      pathLabel: pathToLabel(this.activePath),
+    });
   }
 
   private async chooseChildPath(basePath: Array<string | number>) {
@@ -310,7 +299,6 @@ this.panel.webview.postMessage({
     });
 
     await this.activeDocument.save();
-    this.rootPath = [...model.rootPath];
     await this.load(this.activeDocument, 0, model.path);
     vscode.window.showInformationMessage('JsonArrayEditor: changes saved.');
   }

@@ -1,6 +1,6 @@
 import { findNodeAtOffset, getNodeValue, type Node as JsonNode } from 'jsonc-parser';
 
-export type ColumnType = 'text' | 'number' | 'bool' | 'color' | 'array' | 'object';
+export type ColumnType = 'text' | 'longtext' | 'number' | 'bool' | 'color' | 'array' | 'object';
 
 export type ColumnDef = {
   key: string;
@@ -8,12 +8,12 @@ export type ColumnDef = {
 };
 
 export type TableModel = {
-  kind: 'object-array' | 'primitive-array' | 'single-object';
+  kind: 'object-array' | 'primitive-array' | 'single-object' | 'object-map';
   columns: Array<ColumnDef>;
   rows: Array<Record<string, unknown>>;
   path: Array<string | number>;
   rootPath: Array<string | number>;
-  materializeValue: typeof materializeValue;
+  rowKeys?: string[];
 };
 
 export function pathToLabel(path: Array<string | number>) {
@@ -111,33 +111,6 @@ export function findRelevantEditableNode(root: JsonNode, cursorOffset: number): 
   return undefined;
 }
 
-export function findNearestEditableParentPath(
-  root: JsonNode,
-  currentPath: Array<string | number>
-): Array<string | number> | undefined {
-  if (currentPath.length === 0) {
-    return undefined;
-  }
-
-  for (let i = currentPath.length - 1; i >= 0; i--) {
-    const candidate = currentPath.slice(0, i);
-    const node = getNodeByPath(root, candidate);
-    if (!node) {
-      continue;
-    }
-
-    if (node.type === 'array' && isSupportedArray(node)) {
-      return candidate;
-    }
-
-    if (node.type === 'object' && isStandaloneObject(node)) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
 export function isStandaloneObject(node: JsonNode): boolean {
   if (node.type !== 'object') {
     return false;
@@ -165,10 +138,35 @@ export function isSupportedArray(arrayNode: JsonNode): boolean {
     return true;
   }
 
-  const allPrimitives = values.every((child: JsonNode) =>
-    ['string', 'number', 'boolean', 'null'].includes(child.type)
-  );
+  const allPrimitives = values.every((child: JsonNode) => ['string', 'number', 'boolean', 'null'].includes(child.type));
   return allPrimitives;
+}
+
+export function findNearestEditableParentPath(
+  root: JsonNode,
+  currentPath: Array<string | number>
+): Array<string | number> | undefined {
+  if (currentPath.length === 0) {
+    return undefined;
+  }
+
+  for (let i = currentPath.length - 1; i >= 0; i--) {
+    const candidate = currentPath.slice(0, i);
+    const node = getNodeByPath(root, candidate);
+    if (!node) {
+      continue;
+    }
+
+    if (node.type === 'array' && isSupportedArray(node)) {
+      return candidate;
+    }
+
+    if (node.type === 'object' && isStandaloneObject(node)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
 }
 
 export function buildModelFromArrayNode(arrayNode: JsonNode, path: Array<string | number>): TableModel {
@@ -189,7 +187,6 @@ export function buildModelFromArrayNode(arrayNode: JsonNode, path: Array<string 
       rows: rows.map((row) => ({ ...row })),
       path,
       rootPath: [...path],
-      materializeValue,
     };
   }
 
@@ -202,7 +199,6 @@ export function buildModelFromArrayNode(arrayNode: JsonNode, path: Array<string 
     rows: primitiveValues.map((value) => ({ value })),
     path,
     rootPath: [...path],
-    materializeValue,
   };
 }
 
@@ -213,8 +209,36 @@ export function buildModelFromObjectNode(objectNode: JsonNode, path: Array<strin
     throw new Error('Object at cursor is not supported.');
   }
 
-  const row = value as Record<string, unknown>;
-  const keys = Object.keys(row);
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj);
+
+  const isObjectMap =
+    keys.length > 0 &&
+    keys.every((key) => {
+      const item = obj[key];
+      return item && typeof item === 'object' && !Array.isArray(item);
+    });
+
+  if (isObjectMap) {
+    const rowKeys = [...keys];
+    const rows = rowKeys.map((key) => ({ ...(obj[key] as Record<string, unknown>) }));
+    const columnKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const columns: Array<ColumnDef> = columnKeys.map((key) => ({
+      key,
+      type: detectColumnType(rows.map((row) => row[key])),
+    }));
+
+    return {
+      kind: 'object-map',
+      columns,
+      rows,
+      path,
+      rootPath: [...path],
+      rowKeys,
+    };
+  }
+
+  const row = obj;
   const columns: Array<ColumnDef> = keys.map((key) => ({
     key,
     type: detectColumnType([row[key]]),
@@ -226,7 +250,6 @@ export function buildModelFromObjectNode(objectNode: JsonNode, path: Array<strin
     rows: [{ ...row }],
     path,
     rootPath: [...path],
-    materializeValue,
   };
 }
 
@@ -235,22 +258,37 @@ export function detectColumnType(values: Array<unknown>): ColumnType {
   if (nonNull.length === 0) {
     return 'text';
   }
+
   if (nonNull.every((value) => Array.isArray(value))) {
     return 'array';
   }
+
   if (nonNull.every((value) => value && typeof value === 'object' && !Array.isArray(value))) {
     return 'object';
   }
+
   if (nonNull.every((value) => typeof value === 'number')) {
     return 'number';
   }
+
   if (nonNull.every((value) => typeof value === 'boolean')) {
     return 'bool';
   }
+
   if (nonNull.every((value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))) {
     return 'color';
   }
+
+  if (looksLikeLongText(values)) {
+    return 'longtext';
+  }
+
   return 'text';
+}
+
+function looksLikeLongText(values: Array<unknown>): boolean {
+  const firstFive = values.slice(0, 5).filter((value) => typeof value === 'string') as string[];
+  return firstFive.some((value) => value.length > 100);
 }
 
 export function materializeValue(model: TableModel): unknown {
@@ -264,6 +302,25 @@ export function materializeValue(model: TableModel): unknown {
     const out: Record<string, unknown> = {};
     for (const column of model.columns) {
       out[column.key] = coerceByType(row[column.key], column.type);
+    }
+    return out;
+  }
+
+  if (model.kind === 'object-map') {
+    const out: Record<string, unknown> = {};
+    const rowKeys = model.rowKeys ?? [];
+    for (let i = 0; i < model.rows.length; i++) {
+      const key = rowKeys[i];
+      if (!key) {
+        continue;
+      }
+
+      const row = model.rows[i] ?? {};
+      const rowOut: Record<string, unknown> = {};
+      for (const column of model.columns) {
+        rowOut[column.key] = coerceByType(row[column.key], column.type);
+      }
+      out[key] = rowOut;
     }
     return out;
   }
@@ -309,6 +366,13 @@ export function coerceByType(value: unknown, type: ColumnType): unknown {
     case 'color':
       return typeof value === 'string' ? value : String(value);
 
+    case 'array':
+      return Array.isArray(value) ? value : null;
+
+    case 'object':
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+
+    case 'longtext':
     case 'text':
     default:
       return typeof value === 'string' ? value : JSON.stringify(value);

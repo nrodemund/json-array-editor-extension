@@ -56,7 +56,6 @@ class JsonArrayEditorPanel {
     constructor(panel, extensionUri) {
         this.disposables = [];
         this.activePath = [];
-        this.rootPath = [];
         this.panel = panel;
         this.extensionUri = extensionUri;
         this.panel.webview.html = (0, webview_1.getWebviewHtml)();
@@ -124,25 +123,16 @@ class JsonArrayEditorPanel {
             const path = (0, jsonModel_1.getNodePath)(targetNode);
             model = (0, jsonModel_1.buildModelFromArrayNode)(targetNode, path);
             this.activePath = path;
-            if (!nestedPath) {
-                this.rootPath = [...path];
-            }
         }
         else if (targetNode.type === 'object') {
             const path = (0, jsonModel_1.getNodePath)(targetNode);
             model = (0, jsonModel_1.buildModelFromObjectNode)(targetNode, path);
             this.activePath = path;
-            if (!nestedPath) {
-                this.rootPath = [...path];
-            }
         }
         else {
             throw new Error('Cursor is not within a supported JSON array or standalone object.');
         }
-        if (!this.rootPath.length) {
-            this.rootPath = [...this.activePath];
-        }
-        model.rootPath = [...this.rootPath];
+        model.rootPath = [...this.activePath];
         this.panel.title = `JsonArrayEditor - ${document.fileName.split(/[\\/]/).pop() ?? 'JSON'}`;
         this.panel.webview.postMessage({
             type: 'load',
@@ -262,7 +252,6 @@ class JsonArrayEditorPanel {
             editBuilder.replace(fullRange, updatedText);
         });
         await this.activeDocument.save();
-        this.rootPath = [...model.rootPath];
         await this.load(this.activeDocument, 0, model.path);
         vscode.window.showInformationMessage('JsonArrayEditor: changes saved.');
     }

@@ -5,9 +5,9 @@ exports.pathsEqual = pathsEqual;
 exports.getNodePath = getNodePath;
 exports.getNodeByPath = getNodeByPath;
 exports.findRelevantEditableNode = findRelevantEditableNode;
-exports.findNearestEditableParentPath = findNearestEditableParentPath;
 exports.isStandaloneObject = isStandaloneObject;
 exports.isSupportedArray = isSupportedArray;
+exports.findNearestEditableParentPath = findNearestEditableParentPath;
 exports.buildModelFromArrayNode = buildModelFromArrayNode;
 exports.buildModelFromObjectNode = buildModelFromObjectNode;
 exports.detectColumnType = detectColumnType;
@@ -92,25 +92,6 @@ function findRelevantEditableNode(root, cursorOffset) {
     }
     return undefined;
 }
-function findNearestEditableParentPath(root, currentPath) {
-    if (currentPath.length === 0) {
-        return undefined;
-    }
-    for (let i = currentPath.length - 1; i >= 0; i--) {
-        const candidate = currentPath.slice(0, i);
-        const node = getNodeByPath(root, candidate);
-        if (!node) {
-            continue;
-        }
-        if (node.type === 'array' && isSupportedArray(node)) {
-            return candidate;
-        }
-        if (node.type === 'object' && isStandaloneObject(node)) {
-            return candidate;
-        }
-    }
-    return undefined;
-}
 function isStandaloneObject(node) {
     if (node.type !== 'object') {
         return false;
@@ -135,6 +116,25 @@ function isSupportedArray(arrayNode) {
     const allPrimitives = values.every((child) => ['string', 'number', 'boolean', 'null'].includes(child.type));
     return allPrimitives;
 }
+function findNearestEditableParentPath(root, currentPath) {
+    if (currentPath.length === 0) {
+        return undefined;
+    }
+    for (let i = currentPath.length - 1; i >= 0; i--) {
+        const candidate = currentPath.slice(0, i);
+        const node = getNodeByPath(root, candidate);
+        if (!node) {
+            continue;
+        }
+        if (node.type === 'array' && isSupportedArray(node)) {
+            return candidate;
+        }
+        if (node.type === 'object' && isStandaloneObject(node)) {
+            return candidate;
+        }
+    }
+    return undefined;
+}
 function buildModelFromArrayNode(arrayNode, path) {
     const values = (arrayNode.children ?? []).map((child) => (0, jsonc_parser_1.getNodeValue)(child));
     const allObjects = values.every((value) => value && typeof value === 'object' && !Array.isArray(value));
@@ -151,7 +151,6 @@ function buildModelFromArrayNode(arrayNode, path) {
             rows: rows.map((row) => ({ ...row })),
             path,
             rootPath: [...path],
-            materializeValue,
         };
     }
     const primitiveValues = values;
@@ -162,7 +161,6 @@ function buildModelFromArrayNode(arrayNode, path) {
         rows: primitiveValues.map((value) => ({ value })),
         path,
         rootPath: [...path],
-        materializeValue,
     };
 }
 function buildModelFromObjectNode(objectNode, path) {
@@ -170,8 +168,31 @@ function buildModelFromObjectNode(objectNode, path) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('Object at cursor is not supported.');
     }
-    const row = value;
-    const keys = Object.keys(row);
+    const obj = value;
+    const keys = Object.keys(obj);
+    const isObjectMap = keys.length > 0 &&
+        keys.every((key) => {
+            const item = obj[key];
+            return item && typeof item === 'object' && !Array.isArray(item);
+        });
+    if (isObjectMap) {
+        const rowKeys = [...keys];
+        const rows = rowKeys.map((key) => ({ ...obj[key] }));
+        const columnKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+        const columns = columnKeys.map((key) => ({
+            key,
+            type: detectColumnType(rows.map((row) => row[key])),
+        }));
+        return {
+            kind: 'object-map',
+            columns,
+            rows,
+            path,
+            rootPath: [...path],
+            rowKeys,
+        };
+    }
+    const row = obj;
     const columns = keys.map((key) => ({
         key,
         type: detectColumnType([row[key]]),
@@ -182,7 +203,6 @@ function buildModelFromObjectNode(objectNode, path) {
         rows: [{ ...row }],
         path,
         rootPath: [...path],
-        materializeValue,
     };
 }
 function detectColumnType(values) {
@@ -205,7 +225,14 @@ function detectColumnType(values) {
     if (nonNull.every((value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))) {
         return 'color';
     }
+    if (looksLikeLongText(values)) {
+        return 'longtext';
+    }
     return 'text';
+}
+function looksLikeLongText(values) {
+    const firstFive = values.slice(0, 5).filter((value) => typeof value === 'string');
+    return firstFive.some((value) => value.length > 100);
 }
 function materializeValue(model) {
     if (model.kind === 'primitive-array') {
@@ -217,6 +244,23 @@ function materializeValue(model) {
         const out = {};
         for (const column of model.columns) {
             out[column.key] = coerceByType(row[column.key], column.type);
+        }
+        return out;
+    }
+    if (model.kind === 'object-map') {
+        const out = {};
+        const rowKeys = model.rowKeys ?? [];
+        for (let i = 0; i < model.rows.length; i++) {
+            const key = rowKeys[i];
+            if (!key) {
+                continue;
+            }
+            const row = model.rows[i] ?? {};
+            const rowOut = {};
+            for (const column of model.columns) {
+                rowOut[column.key] = coerceByType(row[column.key], column.type);
+            }
+            out[key] = rowOut;
         }
         return out;
     }
@@ -258,6 +302,11 @@ function coerceByType(value, type) {
         }
         case 'color':
             return typeof value === 'string' ? value : String(value);
+        case 'array':
+            return Array.isArray(value) ? value : null;
+        case 'object':
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        case 'longtext':
         case 'text':
         default:
             return typeof value === 'string' ? value : JSON.stringify(value);
