@@ -4,6 +4,8 @@ JsonArrayEditor is a lightweight VS Code extension that opens a spreadsheet-styl
 
 ![Screenshot](img/screenshot1.png)
 
+![Screenshot](img/screenshot2.png)
+
 ## Features
 
 - Adds **Edit with JsonArrayEditor** to the context menu for JSON and JSONC files
