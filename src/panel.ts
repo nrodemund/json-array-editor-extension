@@ -69,21 +69,10 @@ export class JsonArrayEditorPanel {
         try {
           switch (message.type) {
             case 'save':
-              await this.saveModel(message.model as TableModel);
-              break;
-
-            case 'openChild':
-              if (!this.activeDocument) {
-                return;
-              }
-              await this.load(this.activeDocument, 0, message.path as Array<string | number>);
-              break;
-
-            case 'chooseChild':
-              if (!this.activeDocument) {
-                return;
-              }
-              await this.chooseChildPath(message.basePath as Array<string | number>);
+              await this.saveModel(
+                message.model as TableModel,
+                (message.reopenPath as Array<string | number> | undefined) ?? (message.model as TableModel).path
+              );
               break;
 
             case 'goParent':
@@ -102,6 +91,20 @@ export class JsonArrayEditorPanel {
 
             case 'confirmRemoveColumn':
               await this.confirmRemoveColumn(message.colIndex as number, message.columnKey as string);
+              break;
+
+            case 'openChild':
+              if (!this.activeDocument) {
+                return;
+              }
+              await this.load(this.activeDocument, 0, message.path as Array<string | number>);
+              break;
+
+            case 'chooseChild':
+              if (!this.activeDocument) {
+                return;
+              }
+              await this.chooseChildPath(message.basePath as Array<string | number>);
               break;
           }
         } catch (error) {
@@ -270,7 +273,7 @@ export class JsonArrayEditorPanel {
     });
   }
 
-  private async saveModel(model: TableModel) {
+  private async saveModel(model: TableModel, reopenPath: Array<string | number>) {
     if (!this.activeDocument) {
       throw new Error('No active document loaded.');
     }
@@ -299,7 +302,7 @@ export class JsonArrayEditorPanel {
     });
 
     await this.activeDocument.save();
-    await this.load(this.activeDocument, 0, model.path);
+    await this.load(this.activeDocument, 0, reopenPath);
     vscode.window.showInformationMessage('JsonArrayEditor: changes saved.');
   }
 }

@@ -64,19 +64,7 @@ class JsonArrayEditorPanel {
             try {
                 switch (message.type) {
                     case 'save':
-                        await this.saveModel(message.model);
-                        break;
-                    case 'openChild':
-                        if (!this.activeDocument) {
-                            return;
-                        }
-                        await this.load(this.activeDocument, 0, message.path);
-                        break;
-                    case 'chooseChild':
-                        if (!this.activeDocument) {
-                            return;
-                        }
-                        await this.chooseChildPath(message.basePath);
+                        await this.saveModel(message.model, message.reopenPath ?? message.model.path);
                         break;
                     case 'goParent':
                         if (!this.activeDocument) {
@@ -92,6 +80,18 @@ class JsonArrayEditorPanel {
                         break;
                     case 'confirmRemoveColumn':
                         await this.confirmRemoveColumn(message.colIndex, message.columnKey);
+                        break;
+                    case 'openChild':
+                        if (!this.activeDocument) {
+                            return;
+                        }
+                        await this.load(this.activeDocument, 0, message.path);
+                        break;
+                    case 'chooseChild':
+                        if (!this.activeDocument) {
+                            return;
+                        }
+                        await this.chooseChildPath(message.basePath);
                         break;
                 }
             }
@@ -231,7 +231,7 @@ class JsonArrayEditorPanel {
             confirmed: choice === 'Remove',
         });
     }
-    async saveModel(model) {
+    async saveModel(model, reopenPath) {
         if (!this.activeDocument) {
             throw new Error('No active document loaded.');
         }
@@ -252,7 +252,7 @@ class JsonArrayEditorPanel {
             editBuilder.replace(fullRange, updatedText);
         });
         await this.activeDocument.save();
-        await this.load(this.activeDocument, 0, model.path);
+        await this.load(this.activeDocument, 0, reopenPath);
         vscode.window.showInformationMessage('JsonArrayEditor: changes saved.');
     }
 }

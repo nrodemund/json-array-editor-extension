@@ -338,7 +338,7 @@ function getWebviewHtml() {
         return;
       }
       const rootModel = buildModelFromValue(sessionRootValue, sessionRootPath);
-      vscode.postMessage({ type: 'save', model: rootModel });
+      vscode.postMessage({ type: 'save', model: rootModel, reopenPath: model.path });
     });
 
     document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -387,6 +387,12 @@ function getWebviewHtml() {
       return path.length === 0
         ? '$'
         : '$.' + path.map((part) => (typeof part === 'number' ? '[' + part + ']' : part)).join('.').replace(/\\.\\[/g, '[');
+    }
+
+    function clampCurrentPage(totalVisibleRows) {
+      const totalPages = Math.max(1, Math.ceil(totalVisibleRows / pageSize));
+      currentPage = Math.min(Math.max(1, currentPage), totalPages);
+      return totalPages;
     }
 
     function isSupportedArrayValue(value) {
@@ -608,88 +614,6 @@ function getWebviewHtml() {
       openVirtualChild(parentPath);
     }
 
-    function getChildArrayPicksFromValue(baseValue, basePath) {
-      const picks = [];
-
-      if (baseValue && typeof baseValue === 'object' && !Array.isArray(baseValue)) {
-        for (const key of Object.keys(baseValue)) {
-          const childValue = baseValue[key];
-          if (Array.isArray(childValue) && isSupportedArrayValue(childValue)) {
-            picks.push({
-              label: key,
-              description: pathToLabel([...basePath, key]),
-              path: [...basePath, key],
-            });
-          }
-        }
-      } else if (Array.isArray(baseValue)) {
-        for (let i = 0; i < baseValue.length; i++) {
-          const item = baseValue[i];
-          if (item && typeof item === 'object' && !Array.isArray(item)) {
-            for (const key of Object.keys(item)) {
-              const childValue = item[key];
-              if (Array.isArray(childValue) && isSupportedArrayValue(childValue)) {
-                picks.push({
-                  label: key + ' (row ' + (i + 1) + ')',
-                  description: pathToLabel([...basePath, i, key]),
-                  path: [...basePath, i, key],
-                });
-              }
-            }
-          }
-        }
-      }
-
-      return picks;
-    }
-
-    function showChoiceMenu(anchorEl, items, onPick) {
-      if (activePopup) {
-        activePopup.remove();
-        activePopup = null;
-      }
-
-      if (!items || items.length === 0) {
-        return;
-      }
-
-      const rect = anchorEl.getBoundingClientRect();
-      const menu = document.createElement('div');
-      menu.className = 'popupMenu';
-
-      items.forEach((item) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'popupItem';
-        btn.innerHTML = item.label + (item.description ? '<span class="popupDesc">' + escapeHtml(item.description) + '</span>' : '');
-        btn.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onPick(item);
-          if (activePopup) {
-            activePopup.remove();
-            activePopup = null;
-          }
-        });
-        menu.appendChild(btn);
-      });
-
-      menu.style.left = Math.min(rect.left, window.innerWidth - 380) + 'px';
-      menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 280) + 'px';
-
-      document.body.appendChild(menu);
-      activePopup = menu;
-    }
-
-    function escapeHtml(text) {
-      return String(text)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-    }
-
     function getVisibleRows() {
       if (!model) {
         return [];
@@ -706,8 +630,7 @@ function getWebviewHtml() {
     }
 
     function getPagedRows(visibleRows) {
-      const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
-      currentPage = Math.min(Math.max(1, currentPage), totalPages);
+      const totalPages = clampCurrentPage(visibleRows.length);
       const start = (currentPage - 1) * pageSize;
       const end = start + pageSize;
       return {
@@ -941,15 +864,6 @@ function getWebviewHtml() {
           actionsInner.appendChild(document.createTextNode('—'));
         }
 
-        if (hasNamedChildArrays(row)) {
-          const openNamedChildBtn = document.createElement('button');
-          openNamedChildBtn.textContent = 'Open child';
-          openNamedChildBtn.addEventListener('click', () => {
-            openNamedChild(rowIndex, openNamedChildBtn);
-          });
-          actionsInner.appendChild(openNamedChildBtn);
-        }
-
         actionsTd.appendChild(actionsInner);
         tr.appendChild(actionsTd);
         tbody.appendChild(tr);
@@ -1050,98 +964,6 @@ function getWebviewHtml() {
       } catch {
         return String(value);
       }
-    }
-
-    function hasNamedChildArrays(row) {
-      if (!row || typeof row !== 'object') {
-        return false;
-      }
-      return Object.keys(row).some((key) => Array.isArray(row[key]));
-    }
-
-    function openNamedChild(rowIndex, anchorEl) {
-      if (!model) {
-        return;
-      }
-
-      if (model.kind === 'single-object') {
-        const picks = getChildArrayPicksFromValue(sessionRootValue, model.path);
-        if (picks.length === 0) {
-          return;
-        }
-        if (picks.length === 1) {
-          openVirtualChild(picks[0].path);
-          return;
-        }
-        showChoiceMenu(anchorEl, picks, (pick) => openVirtualChild(pick.path));
-        return;
-      }
-
-      const rowPath = getRowPath(rowIndex);
-      const rowValue = getValueAtRelativePath(sessionRootValue, relativePathFromRoot(rowPath));
-      const picks = getChildArrayPicksFromValue(rowValue, rowPath);
-      if (picks.length === 0) {
-        return;
-      }
-      if (picks.length === 1) {
-        openVirtualChild(picks[0].path);
-        return;
-      }
-      showChoiceMenu(anchorEl, picks, (pick) => openVirtualChild(pick.path));
-    }
-
-    function getMostCommonColumnValues(columnKey, currentRowIndex) {
-      const counts = new Map();
-
-      model.rows.forEach((row, idx) => {
-        if (idx === currentRowIndex) return;
-        const value = row[columnKey];
-        if (typeof value !== 'string' || value.trim() === '') return;
-        counts.set(value, (counts.get(value) || 0) + 1);
-      });
-
-      return Array.from(counts.entries())
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .slice(0, 100)
-        .map(([value]) => value);
-    }
-
-    function showPopupMenu(anchorEl, items, onPick) {
-      if (activePopup) {
-        activePopup.remove();
-        activePopup = null;
-      }
-
-      if (!items || items.length === 0) {
-        return;
-      }
-
-      const rect = anchorEl.getBoundingClientRect();
-      const menu = document.createElement('div');
-      menu.className = 'popupMenu';
-
-      items.forEach((item) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'popupItem';
-        btn.textContent = item;
-        btn.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onPick(item);
-          if (activePopup) {
-            activePopup.remove();
-            activePopup = null;
-          }
-        });
-        menu.appendChild(btn);
-      });
-
-      menu.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
-      menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 280) + 'px';
-
-      document.body.appendChild(menu);
-      activePopup = menu;
     }
 
     function getColumnWidthKey(colIndex, columnKey) {
@@ -1405,27 +1227,6 @@ function getWebviewHtml() {
           syncCurrentModelToRoot();
         });
 
-        if (hasAnyChildArrays(value)) {
-          const openBtn = document.createElement('button');
-          openBtn.textContent = 'Open child';
-          openBtn.addEventListener('click', () => {
-            const basePath = getChildPath(rowIndex, column.key);
-            const baseValue = getValueAtRelativePath(sessionRootValue, relativePathFromRoot(basePath));
-            const picks = getChildArrayPicksFromValue(baseValue, basePath);
-            if (picks.length === 0) {
-              return;
-            }
-            if (picks.length === 1) {
-              openVirtualChild(picks[0].path);
-              return;
-            }
-            showChoiceMenu(openBtn, picks, (pick) => openVirtualChild(pick.path));
-          });
-          wrap.appendChild(txt);
-          wrap.appendChild(openBtn);
-          return wrap;
-        }
-
         wrap.appendChild(txt);
         return wrap;
       }
@@ -1562,9 +1363,7 @@ function getWebviewHtml() {
       }
 
       syncCurrentModelToRoot();
-      const visibleRows = getVisibleRows();
-      const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
-      currentPage = Math.min(currentPage, totalPages);
+      clampCurrentPage(getVisibleRows().length);
       render(currentFileName, currentPathLabel);
     }
 
@@ -1744,13 +1543,6 @@ function getWebviewHtml() {
         default:
           return typeof value === 'string' ? value : String(value);
       }
-    }
-
-    function hasAnyChildArrays(value) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-      }
-      return Object.keys(value).some((key) => Array.isArray(value[key]));
     }
 
     function defaultValueForType(type) {

@@ -14,5 +14,9 @@
     "dsuper": {
         "val": 4,
         "newColumn": "#341414"
+    },
+    "yay": {
+        "val": 4,
+        "newColumn": "#341414"
     }
 }
